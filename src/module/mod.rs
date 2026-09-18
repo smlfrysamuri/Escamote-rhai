@@ -13,13 +13,21 @@ pub use resolvers::ModuleResolver;
 use crate::api::formatting::format_param_type_for_display;
 #[cfg(any(not(feature = "no_index"), not(feature = "no_object")))]
 use crate::func::register::Mut;
-use crate::func::{
-    shared_take_or_clone, FnAccess, FnIterator, RhaiFunc, RhaiNativeFunc, SendSync, StraightHashMap,
-};
-use crate::types::{dynamic::Variant, BloomFilterU64, CustomTypeInfo, CustomTypesCollection};
 use crate::{
-    calc_fn_hash, calc_fn_hash_full, expose_under_internals, Dynamic, Engine, FnArgsVec,
-    Identifier, ImmutableString, RhaiResultOf, Shared, SharedModule, SmartString,
+    calc_fn_hash,
+    calc_fn_hash_full,
+    expose_under_internals,
+    func::{shared_take_or_clone, FnAccess, FnIterator, RhaiFunc, RhaiNativeFunc, SendSync, StraightHashMap},
+    types::{dynamic::Variant, BloomFilterU64, CustomTypeInfo, CustomTypesCollection},
+    Dynamic,
+    Engine,
+    FnArgsVec,
+    Identifier,
+    ImmutableString,
+    RhaiResultOf,
+    Shared,
+    SharedModule,
+    SmartString,
 };
 use bitflags::bitflags;
 #[cfg(feature = "no_std")]
@@ -112,10 +120,7 @@ impl FuncMetadata {
     /// Exported under the `metadata` feature only.
     #[cfg(feature = "metadata")]
     #[must_use]
-    pub fn gen_signature<'a>(
-        &'a self,
-        type_mapper: impl Fn(&'a str) -> std::borrow::Cow<'a, str>,
-    ) -> String {
+    pub fn gen_signature<'a>(&'a self, type_mapper: impl Fn(&'a str) -> std::borrow::Cow<'a, str>) -> String {
         let mut signature = format!("{}(", self.name);
 
         let return_type = format_param_type_for_display(&self.return_type, true);
@@ -127,7 +132,8 @@ impl FuncMetadata {
                     signature += ", ";
                 }
             }
-        } else {
+        }
+        else {
             let params = self
                 .params_info
                 .iter()
@@ -229,7 +235,9 @@ impl FuncRegistration {
     /// # use rhai::{Module, FuncRegistration, FnNamespace};
     /// let mut module = Module::new();
     ///
-    /// fn inc(x: i64) -> i64 { x + 1 }
+    /// fn inc(x: i64) -> i64 {
+    ///     x + 1
+    /// }
     ///
     /// let f = FuncRegistration::new("inc")
     ///     .in_global_namespace()
@@ -479,13 +487,12 @@ impl FuncRegistration {
             let is_pure = true;
 
             #[cfg(any(not(feature = "no_index"), not(feature = "no_object")))]
-            let is_pure = is_pure
-                && (FUNC::num_params() != 3 || self.metadata.name != crate::engine::FN_IDX_SET);
+            let is_pure =
+                is_pure && (FUNC::num_params() != 3 || self.metadata.name != crate::engine::FN_IDX_SET);
 
             #[cfg(not(feature = "no_object"))]
             let is_pure = is_pure
-                && (FUNC::num_params() != 2
-                    || !self.metadata.name.starts_with(crate::engine::FN_SET));
+                && (FUNC::num_params() != 2 || !self.metadata.name.starts_with(crate::engine::FN_SET));
             is_pure
         });
         let is_volatile = self.volatility.unwrap_or(false);
@@ -606,7 +613,7 @@ impl FuncRegistration {
             Entry::Occupied(mut entry) => {
                 entry.insert((func, f.into()));
                 entry.into_mut()
-            }
+            },
             Entry::Vacant(entry) => entry.insert((func, f.into())),
         };
 
@@ -683,11 +690,7 @@ impl fmt::Debug for Module {
             )
             .field(
                 "modules",
-                &self
-                    .modules
-                    .keys()
-                    .map(SmartString::as_str)
-                    .collect::<Vec<_>>(),
+                &self.modules.keys().map(SmartString::as_str).collect::<Vec<_>>(),
             )
             .field("vars", &self.variables)
             .field(
@@ -773,7 +776,12 @@ impl Module {
     /// # use rhai::Module;
     /// let mut module = Module::new();
     /// module.set_var("answer", 42_i64);
-    /// assert_eq!(module.get_var_value::<i64>("answer").expect("answer should exist"), 42);
+    /// assert_eq!(
+    ///     module
+    ///         .get_var_value::<i64>("answer")
+    ///         .expect("answer should exist"),
+    ///     42
+    /// );
     /// ```
     #[inline(always)]
     #[must_use]
@@ -968,8 +976,7 @@ impl Module {
     #[cfg(feature = "metadata")]
     #[inline(always)]
     pub fn set_custom_type_with_comments<T>(&mut self, name: &str, comments: &[&str]) -> &mut Self {
-        self.custom_types
-            .add_type_with_comments::<T>(name, comments);
+        self.custom_types.add_type_with_comments::<T>(name, comments);
         self
     }
     /// Map a custom type to a friendly display name.
@@ -1059,7 +1066,10 @@ impl Module {
     ///
     /// module.set_custom_type::<TestStruct>("MyType");
     ///
-    /// assert_eq!(module.get_custom_type_display::<TestStruct>(), Some("MyType"));
+    /// assert_eq!(
+    ///     module.get_custom_type_display::<TestStruct>(),
+    ///     Some("MyType")
+    /// );
     /// ```
     #[inline(always)]
     #[must_use]
@@ -1096,10 +1106,7 @@ impl Module {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         !self.flags.contains(ModuleFlags::INDEXED_GLOBAL_FUNCTIONS)
-            && self
-                .functions
-                .as_ref()
-                .map_or(true, StraightHashMap::is_empty)
+            && self.functions.as_ref().map_or(true, StraightHashMap::is_empty)
             && self.variables.is_empty()
             && self.modules.is_empty()
             && self.type_iterators.is_empty()
@@ -1125,7 +1132,10 @@ impl Module {
     /// let mut module = Module::new();
     /// assert!(module.is_indexed());
     ///
-    /// module.set_native_fn("foo", |x: &mut i64, y: i64| { *x = y; Ok(()) });
+    /// module.set_native_fn("foo", |x: &mut i64, y: i64| {
+    ///     *x = y;
+    ///     Ok(())
+    /// });
     /// assert!(!module.is_indexed());
     ///
     /// # #[cfg(not(feature = "no_module"))]
@@ -1204,7 +1214,12 @@ impl Module {
     /// # use rhai::Module;
     /// let mut module = Module::new();
     /// module.set_var("answer", 42_i64);
-    /// assert_eq!(module.get_var_value::<i64>("answer").expect("answer should exist"), 42);
+    /// assert_eq!(
+    ///     module
+    ///         .get_var_value::<i64>("answer")
+    ///         .expect("answer should exist"),
+    ///     42
+    /// );
     /// ```
     #[inline]
     #[must_use]
@@ -1220,7 +1235,13 @@ impl Module {
     /// # use rhai::Module;
     /// let mut module = Module::new();
     /// module.set_var("answer", 42_i64);
-    /// assert_eq!(module.get_var("answer").expect("answer should exist").cast::<i64>(), 42);
+    /// assert_eq!(
+    ///     module
+    ///         .get_var("answer")
+    ///         .expect("answer should exist")
+    ///         .cast::<i64>(),
+    ///     42
+    /// );
     /// ```
     #[inline(always)]
     #[must_use]
@@ -1238,14 +1259,15 @@ impl Module {
     /// # use rhai::Module;
     /// let mut module = Module::new();
     /// module.set_var("answer", 42_i64);
-    /// assert_eq!(module.get_var_value::<i64>("answer").expect("answer should exist"), 42);
+    /// assert_eq!(
+    ///     module
+    ///         .get_var_value::<i64>("answer")
+    ///         .expect("answer should exist"),
+    ///     42
+    /// );
     /// ```
     #[inline]
-    pub fn set_var(
-        &mut self,
-        name: impl Into<Identifier>,
-        value: impl Variant + Clone,
-    ) -> &mut Self {
+    pub fn set_var(&mut self, name: impl Into<Identifier>, value: impl Variant + Clone) -> &mut Self {
         let ident = name.into();
         let value = Dynamic::from(value);
 
@@ -1344,21 +1366,16 @@ impl Module {
     #[inline(always)]
     #[must_use]
     pub(crate) fn get_script_fn_by_hash(&self, hash: u64) -> Option<&crate::func::RhaiFunc> {
-        self.functions
-            .as_ref()
-            .and_then(|f| f.get(&hash))
-            .map(|(f, _)| f)
+        self.functions.as_ref().and_then(|f| f.get(&hash)).map(|(f, _)| f)
     }
 
     /// Get a mutable reference to a scripted function in the [`Module`] based on its hash.
     /// Exported under the `internals` feature only.
+    #[allow(unused)]
     #[cfg(not(feature = "no_function"))]
     #[inline(always)]
     #[must_use]
-    pub(crate) fn get_script_fn_by_hash_mut(
-        &mut self,
-        hash: u64,
-    ) -> Option<&mut crate::func::RhaiFunc> {
+    pub(crate) fn get_script_fn_by_hash_mut(&mut self, hash: u64) -> Option<&mut crate::func::RhaiFunc> {
         self.functions
             .as_mut()
             .and_then(|f| f.get_mut(&hash))
@@ -1503,16 +1520,14 @@ impl Module {
         arg_names: impl IntoIterator<Item = A>,
         comments: impl IntoIterator<Item = C>,
     ) -> &mut Self {
-        let mut params_info = arg_names
-            .into_iter()
-            .map(Into::into)
-            .collect::<FnArgsVec<_>>();
+        let mut params_info = arg_names.into_iter().map(Into::into).collect::<FnArgsVec<_>>();
 
         if let Some((_, f)) = self.functions.as_mut().and_then(|m| m.get_mut(&hash_fn)) {
             let (params_info, return_type_name) = if params_info.len() > f.num_params {
                 let return_type = params_info.pop().unwrap();
                 (params_info, return_type)
-            } else {
+            }
+            else {
                 (params_info, crate::SmartString::new_const())
             };
             f.params_info = params_info;
@@ -1671,11 +1686,7 @@ impl Module {
     /// ```
     #[cfg(not(feature = "no_object"))]
     #[inline(always)]
-    pub fn set_getter_fn<A, const X: bool, R, FUNC>(
-        &mut self,
-        name: impl AsRef<str>,
-        func: FUNC,
-    ) -> u64
+    pub fn set_getter_fn<A, const X: bool, R, FUNC>(&mut self, name: impl AsRef<str>, func: FUNC) -> u64
     where
         A: Variant + Clone,
         R: Variant + Clone,
@@ -1710,21 +1721,18 @@ impl Module {
     /// # Example
     ///
     /// ```
-    /// use rhai::{Module, ImmutableString};
+    /// use rhai::{ImmutableString, Module};
     ///
     /// let mut module = Module::new();
     /// let hash = module.set_setter_fn("value", |x: &mut i64, y: ImmutableString| {
-    ///                 *x = y.len() as i64; Ok(())
+    ///     *x = y.len() as i64;
+    ///     Ok(())
     /// });
     /// assert!(module.contains_fn(hash));
     /// ```
     #[cfg(not(feature = "no_object"))]
     #[inline(always)]
-    pub fn set_setter_fn<A, const X: bool, R, FUNC>(
-        &mut self,
-        name: impl AsRef<str>,
-        func: FUNC,
-    ) -> u64
+    pub fn set_setter_fn<A, const X: bool, R, FUNC>(&mut self, name: impl AsRef<str>, func: FUNC) -> u64
     where
         A: Variant + Clone,
         R: Variant + Clone,
@@ -1750,25 +1758,23 @@ impl Module {
     /// # Example
     ///
     /// ```
-    /// use rhai::{Module, ImmutableString};
+    /// use rhai::{ImmutableString, Module};
     ///
     /// let mut module = Module::new();
-    /// let (hash_get, hash_set) =
-    ///         module.set_getter_setter_fn("value",
-    ///                 |x: &mut i64| Ok(x.to_string().into()),
-    ///                 |x: &mut i64, y: ImmutableString| { *x = y.len() as i64; Ok(()) }
-    ///         );
+    /// let (hash_get, hash_set) = module.set_getter_setter_fn(
+    ///     "value",
+    ///     |x: &mut i64| Ok(x.to_string().into()),
+    ///     |x: &mut i64, y: ImmutableString| {
+    ///         *x = y.len() as i64;
+    ///         Ok(())
+    ///     },
+    /// );
     /// assert!(module.contains_fn(hash_get));
     /// assert!(module.contains_fn(hash_set));
     /// ```
     #[cfg(not(feature = "no_object"))]
     #[inline(always)]
-    pub fn set_getter_setter_fn<
-        A: Variant + Clone,
-        const X1: bool,
-        const X2: bool,
-        R: Variant + Clone,
-    >(
+    pub fn set_getter_setter_fn<A: Variant + Clone, const X1: bool, const X2: bool, R: Variant + Clone>(
         &mut self,
         name: impl AsRef<str>,
         getter: impl RhaiNativeFunc<(Mut<A>,), 1, X1, R, true> + SendSync + 'static,
@@ -1808,16 +1814,15 @@ impl Module {
     /// # Example
     ///
     /// ```
-    /// use rhai::{Module, ImmutableString};
+    /// use rhai::{ImmutableString, Module};
     ///
     /// #[derive(Clone)]
     /// struct TestStruct(i64);
     ///
     /// let mut module = Module::new();
     ///
-    /// let hash = module.set_indexer_get_fn(
-    ///                 |x: &mut TestStruct, y: ImmutableString| Ok(x.0 + y.len() as i64)
-    ///            );
+    /// let hash = module
+    ///     .set_indexer_get_fn(|x: &mut TestStruct, y: ImmutableString| Ok(x.0 + y.len() as i64));
     ///
     /// assert!(module.contains_fn(hash));
     /// ```
@@ -1862,7 +1867,7 @@ impl Module {
     /// # Example
     ///
     /// ```
-    /// use rhai::{Module, ImmutableString};
+    /// use rhai::{ImmutableString, Module};
     ///
     /// #[derive(Clone)]
     /// struct TestStruct(i64);
@@ -1870,9 +1875,9 @@ impl Module {
     /// let mut module = Module::new();
     ///
     /// let hash = module.set_indexer_set_fn(|x: &mut TestStruct, y: ImmutableString, value: i64| {
-    ///                         *x = TestStruct(y.len() as i64 + value);
-    ///                         Ok(())
-    ///            });
+    ///     *x = TestStruct(y.len() as i64 + value);
+    ///     Ok(())
+    /// });
     ///
     /// assert!(module.contains_fn(hash));
     /// ```
@@ -1911,7 +1916,7 @@ impl Module {
     /// # Example
     ///
     /// ```
-    /// use rhai::{Module, ImmutableString};
+    /// use rhai::{ImmutableString, Module};
     ///
     /// #[derive(Clone)]
     /// struct TestStruct(i64);
@@ -1920,7 +1925,10 @@ impl Module {
     ///
     /// let (hash_get, hash_set) = module.set_indexer_get_set_fn(
     ///     |x: &mut TestStruct, y: ImmutableString| Ok(x.0 + y.len() as i64),
-    ///     |x: &mut TestStruct, y: ImmutableString, value: i64| { *x = TestStruct(y.len() as i64 + value); Ok(()) }
+    ///     |x: &mut TestStruct, y: ImmutableString, value: i64| {
+    ///         *x = TestStruct(y.len() as i64 + value);
+    ///         Ok(())
+    ///     },
     /// );
     ///
     /// assert!(module.contains_fn(hash_get));
@@ -1939,10 +1947,7 @@ impl Module {
         get_fn: impl RhaiNativeFunc<(Mut<A>, B), 2, X1, R, true> + SendSync + 'static,
         set_fn: impl RhaiNativeFunc<(Mut<A>, B, R), 3, X2, (), true> + SendSync + 'static,
     ) -> (u64, u64) {
-        (
-            self.set_indexer_get_fn(get_fn),
-            self.set_indexer_set_fn(set_fn),
-        )
+        (self.set_indexer_get_fn(get_fn), self.set_indexer_set_fn(set_fn))
     }
 
     /// Look up a native Rust function by hash.
@@ -2068,9 +2073,7 @@ impl Module {
             let others_len = functions.len();
 
             for (&k, f) in functions {
-                let map = self
-                    .functions
-                    .get_or_insert_with(|| new_hash_map(FN_MAP_SIZE));
+                let map = self.functions.get_or_insert_with(|| new_hash_map(FN_MAP_SIZE));
                 map.reserve(others_len);
                 map.entry(k).or_insert_with(|| f.clone());
             }
@@ -2165,7 +2168,8 @@ impl Module {
                 .filter(|(.., (f, m))| {
                     if f.is_script() {
                         filter(m.namespace, m.access, &m.name, m.num_params)
-                    } else {
+                    }
+                    else {
                         false
                     }
                 })
@@ -2199,9 +2203,7 @@ impl Module {
     }
     /// Get an iterator to the sub-modules in the [`Module`].
     #[inline(always)]
-    pub(crate) fn iter_sub_modules_raw(
-        &self,
-    ) -> impl Iterator<Item = (&Identifier, &SharedModule)> {
+    pub(crate) fn iter_sub_modules_raw(&self) -> impl Iterator<Item = (&Identifier, &SharedModule)> {
         self.modules.iter()
     }
 
@@ -2306,7 +2308,12 @@ impl Module {
     /// let ast = engine.compile("let answer = 42; export answer;")?;
     /// let module = Module::eval_ast_as_new(Scope::new(), &ast, &engine)?;
     /// assert!(module.contains_var("answer"));
-    /// assert_eq!(module.get_var_value::<i64>("answer").expect("answer should exist"), 42);
+    /// assert_eq!(
+    ///     module
+    ///         .get_var_value::<i64>("answer")
+    ///         .expect("answer should exist"),
+    ///     42
+    /// );
     /// # Ok(())
     /// # }
     /// ```
@@ -2368,7 +2375,8 @@ impl Module {
                 .skip(orig_imports_len)
                 .map(|(k, m)| (k.clone(), m.clone()))
                 .collect()
-        } else {
+        }
+        else {
             crate::ThinVec::new()
         };
         imports.iter().for_each(|(k, m)| {
@@ -2407,7 +2415,8 @@ impl Module {
             let (mut _value, mut aliases) = if i >= orig_scope_len {
                 let (_, v, a) = scope.pop_entry().unwrap();
                 (v, a)
-            } else {
+            }
+            else {
                 let (_, v, a) = scope.get_entry_by_index(i);
                 (v.clone(), a.to_vec())
             };
@@ -2419,7 +2428,7 @@ impl Module {
                     if !module.contains_var(&alias) {
                         module.set_var(alias, _value);
                     }
-                }
+                },
                 _ => {
                     // Avoid cloning the last value
                     let mut first_alias = None;
@@ -2430,7 +2439,8 @@ impl Module {
                         }
                         if first_alias.is_none() {
                             first_alias = Some(alias);
-                        } else {
+                        }
+                        else {
                             module.set_var(alias, _value.clone());
                         }
                     }
@@ -2438,7 +2448,7 @@ impl Module {
                     if let Some(alias) = first_alias {
                         module.set_var(alias, _value);
                     }
-                }
+                },
             }
         }
 
@@ -2541,7 +2551,7 @@ impl Module {
                         // Flatten all functions with global namespace
                         functions.insert(hash, f.clone());
                         contains_indexed_global_functions = true;
-                    }
+                    },
                     FnNamespace::Internal => (),
                 }
                 match m.access {
@@ -2552,8 +2562,7 @@ impl Module {
                 if f.is_script() {
                     #[cfg(not(feature = "no_function"))]
                     {
-                        let hash_script =
-                            crate::calc_fn_hash(path.iter().copied(), &m.name, m.num_params);
+                        let hash_script = crate::calc_fn_hash(path.iter().copied(), &m.name, m.num_params);
                         #[cfg(not(feature = "no_object"))]
                         let hash_script = f
                             .get_script_fn_def()
@@ -2575,9 +2584,9 @@ impl Module {
 
                         functions.insert(hash_script, f.clone());
                     }
-                } else {
-                    let hash_fn =
-                        calc_native_fn_hash(path.iter().copied(), &m.name, &m.param_types);
+                }
+                else {
+                    let hash_fn = calc_native_fn_hash(path.iter().copied(), &m.name, &m.param_types);
 
                     // Catch hash collisions in testing environment only.
                     #[cfg(feature = "testing-environ")]
@@ -2598,8 +2607,7 @@ impl Module {
         if !self.is_indexed() {
             let mut path = Vec::with_capacity(4);
             let mut variables = new_hash_map(self.variables.len());
-            let mut functions =
-                new_hash_map(self.functions.as_ref().map_or(0, StraightHashMap::len));
+            let mut functions = new_hash_map(self.functions.as_ref().map_or(0, StraightHashMap::len));
             let mut type_iterators = BTreeMap::new();
 
             path.push("");
