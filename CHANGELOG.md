@@ -7,10 +7,16 @@ Version 1.27.0
 Bug fixes
 ---------
 
-* Fixed bug in using bare function name as a variable (identified by Grain VM).
+* Using bare function name as a variable now works properly (identified by Rhai Grain ).
 * Support bare function names as variables in Rhai Grain ([`#1158`](https://github.com/rhaiscript/rhai/pull/1158)).
 * (Fuzzing) Fixed missing data-race condition in native function callbacks ([`#1161`](https://github.com/rhaiscript/rhai/pull/1161)).
 * The `Engine::on_map_missing_property` callback now works properly with Rhai Grain ([`#1164`](https://github.com/rhaiscript/rhai/pull/1164)).
+* The `Engine::on_def_var` callback now works properly with Rhai Grain ([`#1170`](https://github.com/rhaiscript/rhai/pull/1170)). However, the _nesting level_ reported by `VarDefInfo` is always zero, since all nesting information is lost once the `AST` is lowered to bytecodes.
+* Errors raised during built-in binary operations (such as `100 / 0`) now contain proper `Position` information (identified by Rhai Grain ).
+* Number of operations reported to `Engine::on_progress` now properly count scripted function calls from native Rust functions (identified by Rhai Grain). Previously all operation counts performed by a scripted function callback (including a closure) from a native Rust function are discarded.
+* Capturing the caller's scope via `call!(fnptr, args...)` now works properly in Rhai Grain.
+* `.call(fnptr, args...)` and `.curry(...)` method calls now work properly in any position (instead of only on a chain's root) in Rhai Grain.
+* `.shared()` method calls now work property in Rhai Grain.
 
 New features
 ------------
@@ -22,8 +28,10 @@ Enhancements
 
 * Rhai Grain is no longer _experimental_.
 * Rhai Grain bytecodes transpilation is optimized (thanks [`@ImTheSquid`](https://github.com/ImTheSquid) [`#1156`](https://github.com/rhaiscript/rhai/pull/1156)).
+* Rhai Grain VM is now at par or faster than the AST interpreter for scripts index assignments ([`#1163`](https://github.com/rhaiscript/rhai/pull/1163)).
 * Rhai Grain VM is now at par or faster than the AST interpreter for scripts with callbacks ([`#1159`](https://github.com/rhaiscript/rhai/pull/1159)).
-* `rhai-run` now supports loading and executing Rhai Grain bytecodes if the `grain` feature is enabled ([`#1160`](https://github.com/rhaiscript/rhai/pull/1160)).
+* Rhai Grain VM is now 1.8-2x faster than the AST interpreter when running `switch` statements ([`#1162`](https://github.com/rhaiscript/rhai/pull/1162), [`#1165`](https://github.com/rhaiscript/rhai/pull/1165)).
+* `rhai-run` now supports loading and executing Rhai Grain bytecode files if the `grain` feature is enabled ([`#1160`](https://github.com/rhaiscript/rhai/pull/1160)).
 * The example `grain_dump` is now split into two CLI tools in `bin`: `grain-compile`, which compiles a Rhai script into Rhai Grain bytecodes, and `grain-dump` which dissembles a Rhai Grain bytecodes files ([`#1160`](https://github.com/rhaiscript/rhai/pull/1160)).
 * `grain-dump` now disassembles Rhai Grain bytecodes files with more complete information ([`#1168`](https://github.com/rhaiscript/rhai/pull/1168)).
 

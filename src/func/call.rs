@@ -73,10 +73,10 @@ impl Engine {
             // Handle fn_ptr.call(...)
             KEYWORD_FN_PTR_CALL if target.as_ref().is_fnptr() => {
                 let fn_ptr = target.as_ref().read_lock::<FnPtr>().unwrap();
-                let mut curry = fn_ptr.curry().iter().cloned().collect::<FnArgsVec<_>>();
+                let curry = &mut fn_ptr.curry().iter().cloned().collect::<FnArgsVec<_>>();
 
                 // Arguments are passed as-is, adding the curried arguments
-                let mut args = curry
+                let args = &mut curry
                     .iter_mut()
                     .chain(call_args.iter_mut())
                     .collect::<FnArgsVec<_>>();
@@ -98,9 +98,10 @@ impl Engine {
                         let scope = &mut Scope::new();
 
                         defer! { let orig_level = global.level; global.level += 1 }
+                        let global = global.into();
 
                         self.call_script_fn(
-                            global, caches, scope, None, env, &fn_def, &mut args, true, pos,
+                            global, caches, scope, None, env, &fn_def, args, true, pos,
                         )
                         .map(|v| (v, false))
                     }
@@ -110,7 +111,7 @@ impl Engine {
 
                         let context = (self, fn_name, None, &*global, pos).into();
 
-                        func(context, &mut args)
+                        func(context, args)
                             .and_then(|r| self.check_data_size(r, pos))
                             .map(|v| (v, false))
                             .map_err(|err| err.fill_position(pos))
@@ -132,8 +133,7 @@ impl Engine {
 
                         // Map it to name(args) in function-call style
                         self.exec_fn_call(
-                            global, caches, None, fn_name, None, new_hash, &mut args, false, false,
-                            pos,
+                            global, caches, None, fn_name, None, new_hash, args, false, false, pos,
                         )
                     }
                 }
@@ -166,7 +166,7 @@ impl Engine {
                 let FnPtr { name, curry, typ } = fn_ptr;
 
                 // Adding the curried arguments and the remaining arguments
-                let mut curry = curry.into_iter().collect::<FnArgsVec<_>>();
+                let curry = &mut curry.into_iter().collect::<FnArgsVec<_>>();
                 let args = &mut FnArgsVec::with_capacity(curry.len() + call_args.len());
                 args.extend(curry.iter_mut());
                 args.extend(call_args.iter_mut().skip(1));
@@ -194,6 +194,7 @@ impl Engine {
                         let this_ptr = Some(target.as_mut());
 
                         defer! { let orig_level = global.level; global.level += 1 }
+                        let global = global.into();
 
                         self.call_script_fn(
                             global, caches, scope, this_ptr, env, &fn_def, args, true, pos,
@@ -369,6 +370,7 @@ impl Engine {
                         let args = &mut call_args.iter_mut().collect::<FnArgsVec<_>>();
 
                         defer! { let orig_level = global.level; global.level += 1 }
+                        let global = global.into();
 
                         self.call_script_fn(
                             global, caches, scope, this_ptr, env, &fn_def, args, true, pos,
@@ -483,8 +485,8 @@ impl Engine {
                         };
 
                         // Evaluate arguments
-                        let mut arg_values =
-                            FnArgsVec::with_capacity(curry.len() + args_expr.len());
+                        let arg_values =
+                            &mut FnArgsVec::with_capacity(curry.len() + args_expr.len());
                         arg_values.extend(curry);
                         for expr in args_expr {
                             let this_ptr = this_ptr.as_deref_mut();
@@ -497,6 +499,7 @@ impl Engine {
                         let env = env.as_deref();
 
                         defer! { let orig_level = global.level; global.level += 1 }
+                        let global = global.into();
 
                         return self.call_script_fn(
                             global, caches, scope, None, env, &fn_def, args, true, pos,
@@ -505,8 +508,8 @@ impl Engine {
                     // Native function - short-circuit
                     FnPtrType::Native(ref func) => {
                         // Evaluate arguments
-                        let mut arg_values =
-                            FnArgsVec::with_capacity(curry.len() + args_expr.len());
+                        let arg_values =
+                            &mut FnArgsVec::with_capacity(curry.len() + args_expr.len());
                         arg_values.extend(curry);
                         for expr in args_expr {
                             let this_ptr = this_ptr.as_deref_mut();
@@ -652,8 +655,8 @@ impl Engine {
         }
 
         // Normal function call - except for Fn, curry, call and eval (handled above)
-        let mut arg_values = FnArgsVec::with_capacity(num_args);
-        let mut args = FnArgsVec::with_capacity(num_args + curry.len());
+        let arg_values = &mut FnArgsVec::with_capacity(num_args);
+        let args = &mut FnArgsVec::with_capacity(num_args + curry.len());
         let mut is_ref_mut = false;
 
         // Capture parent scope?
@@ -674,8 +677,7 @@ impl Engine {
 
             return self
                 .exec_fn_call(
-                    global, caches, scope, fn_name, op_token, hashes, &mut args, is_ref_mut, false,
-                    pos,
+                    global, caches, scope, fn_name, op_token, hashes, args, is_ref_mut, false, pos,
                 )
                 .map(|(v, ..)| v);
         }
@@ -749,7 +751,7 @@ impl Engine {
         args.extend(arg_values.iter_mut());
 
         self.exec_fn_call(
-            global, caches, None, fn_name, op_token, hashes, &mut args, is_ref_mut, false, pos,
+            global, caches, None, fn_name, op_token, hashes, args, is_ref_mut, false, pos,
         )
         .map(|(v, ..)| v)
     }
@@ -768,7 +770,7 @@ impl Engine {
         hash: u64,
         pos: Position,
     ) -> RhaiResult {
-        let mut arg_values = FnArgsVec::with_capacity(args_expr.len());
+        let arg_values = &mut FnArgsVec::with_capacity(args_expr.len());
         let args = &mut FnArgsVec::with_capacity(args_expr.len());
         let mut first_arg_value = None;
 
@@ -912,6 +914,7 @@ impl Engine {
 
                 let orig_source = std::mem::replace(&mut global.source, module.id_raw().cloned());
                 defer! { global => move |g| g.source = orig_source }
+                let global = global.into();
 
                 self.call_script_fn(global, caches, scope, None, env, fn_def, args, true, pos)
             }
@@ -1032,21 +1035,41 @@ impl Engine {
         let op_token = op_token.as_ref();
 
         // Short-circuit native unary operator call if under Fast Operators mode
-        if self.fast_operators() && args.len() == 1 && op_token == Some(&Token::Bang) {
-            let mut value = self
-                .get_arg_value(global, caches, scope, this_ptr.as_deref_mut(), &args[0])?
-                .0
-                .flatten();
+        if self.fast_operators() && args.len() == 1 {
+            if let Some(op_token) = op_token {
+                let mut value = self
+                    .get_arg_value(global, caches, scope, this_ptr.as_deref_mut(), &args[0])?
+                    .0
+                    .flatten();
 
-            return if let Union::Bool(b, ..) = value.0 {
-                Ok((!b).into())
-            } else {
+                if matches!(op_token, &Token::Bang) {
+                    if let Union::Bool(b, ..) = &value.0 {
+                        return Ok((!b).into());
+                    }
+                }
+                if matches!(op_token, &Token::Minus | &Token::UnaryMinus) {
+                    if let Union::Int(n, ..) = &value.0 {
+                        return Ok((-n).into());
+                    }
+                    #[cfg(not(feature = "no_float"))]
+                    if let Union::Float(n, ..) = &value.0 {
+                        return Ok((-(**n)).into());
+                    }
+                    #[cfg(feature = "decimal")]
+                    if let Union::Decimal(n, ..) = &value.0 {
+                        return Ok((-(**n)).into());
+                    }
+                }
+
                 let operand = &mut [&mut value];
-                self.exec_fn_call(
-                    global, caches, None, name, op_token, *hashes, operand, false, false, pos,
-                )
-                .map(|(v, ..)| v)
-            };
+                let op_token = Some(op_token);
+
+                return self
+                    .exec_fn_call(
+                        global, caches, None, name, op_token, *hashes, operand, false, false, pos,
+                    )
+                    .map(|(v, ..)| v);
+            }
         }
 
         // Short-circuit native binary operator call if under Fast Operators mode
@@ -1073,7 +1096,9 @@ impl Engine {
 
                     let context =
                         need_context.then(|| (self, name.as_str(), None, &*global, pos).into());
-                    return func(context, &mut [&mut lhs, &mut rhs]);
+
+                    return func(context, &mut [&mut lhs, &mut rhs])
+                        .map_err(|err| err.fill_position(pos));
                 }
             }
 

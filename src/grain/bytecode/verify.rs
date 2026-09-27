@@ -398,7 +398,7 @@ fn verify_chunk(
             // The one instruction whose edges differ in more than where they
             // go: falling through carries the item it pushed and still holds
             // the iterator, while the exit edge has neither.
-            Op::IterNext { exit, indexed } => {
+            Op::IterNext { exit, .. } => {
                 go(
                     exit,
                     State {
@@ -413,8 +413,8 @@ fn verify_chunk(
                 work_list.push((
                     next,
                     State {
-                        // The item, and the count under it when there is one.
-                        operands: depth + 1 + usize::from(indexed),
+                        // The item
+                        operands: depth + 1,
                         iters: state.iters,
                         handlers: state.handlers,
                     },
@@ -586,7 +586,9 @@ fn effect(op: &Op, pools: &Pools) -> (usize, usize, usize) {
         // separate `Op::Unit`, emitted only where something reads it.
         Op::AssignLocal { .. } | Op::AssignNamed { .. } | Op::AssignThis { .. } => (1, 1, 0),
 
-        Op::JumpIfFalse { .. } | Op::JumpIfTrue { .. } | Op::Switch(..) => (1, 1, 0),
+        Op::JumpIfFalse { .. } | Op::JumpIfTrue { .. } => (1, 1, 0),
+
+        Op::Switch(..) => (1, 0, 0),
 
         Op::Jump(..)
         | Op::UnwindTo(..)
@@ -723,7 +725,10 @@ fn check_indices(at: usize, code: &[u8], pools: &Pools) -> Result<(), VerifyErro
             bounded(index(1), "chain", pools.chains.len())?;
             check_chain_indices(at, &pools.chains[index(1) as usize], pools)
         }
-        tag::SWITCH => bounded(index(1), "switch", pools.switches.len()),
+        tag::SWITCH => {
+            bounded(index(1), "switch", pools.switches.len())?;
+            check_switch_indices(at, &pools.switches[index(1) as usize], pools)
+        }
         _ => Ok(()),
     }
 }
@@ -775,10 +780,33 @@ fn check_chain_indices(at: usize, chain: &Chain, pools: &Pools) -> Result<(), Ve
     }
 }
 
+/// Check the pool references *inside* a switch record.
+///
+/// A switch is one instruction over an unbounded record, so nearly all of what
+/// it names lives in the pool rather than in the code. Bounding only the
+/// record's own index would leave most of the instruction unverified.
+fn check_switch_indices(at: usize, switch: &Switch, pools: &Pools) -> Result<(), VerifyError> {
+    let bounded = |index: u32, what: &'static str, len: usize| {
+        if index as usize >= len {
+            Err(VerifyError::BadIndex { at, what, index })
+        } else {
+            Ok(())
+        }
+    };
+
+    if let Some(cases) = &switch.cases {
+        for (_, value) in cases.values() {
+            bounded(*value, "constant", pools.consts)?;
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::grain::bytecode::assemble;
+    use crate::grain::bytecode::code::assemble;
     use crate::grain::format::Abi;
 
     fn pools() -> Pools<'static> {
@@ -1078,11 +1106,12 @@ mod tests {
                 &[],
                 &[chunk],
                 &Pools {
+                    consts: 43,
                     switches: &good,
                     ..pools()
                 }
             ),
-            Ok(vec![1]),
+            Ok(vec![2]),
         );
 
         // One byte into the `Switch` instruction's own operand.
@@ -1096,6 +1125,7 @@ mod tests {
                     &[],
                     &[chunk],
                     &Pools {
+                        consts: 43,
                         switches: &mid,
                         ..pools()
                     }
@@ -1116,6 +1146,7 @@ mod tests {
                     &[],
                     &[chunk],
                     &Pools {
+                        consts: 43,
                         switches: &outside,
                         ..pools()
                     }

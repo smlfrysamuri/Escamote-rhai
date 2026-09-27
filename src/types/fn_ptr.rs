@@ -1,11 +1,15 @@
 //! The `FnPtr` type.
 
+use crate::eval::Caches;
 use crate::func::{is_valid_function_name, FnCallArgs};
 use crate::types::Token;
-use crate::types::{dynamic::Variant, token::is_reserved_keyword_or_symbol};
+use crate::types::{
+    dynamic::Variant,
+    token::{is_reserved_keyword_or_symbol, is_valid_identifier},
+};
 use crate::{
     expose_under_internals, Dynamic, FnArgsVec, FuncArgs, ImmutableString, NativeCallContext,
-    Position, RhaiError, RhaiResult, RhaiResultOf, Shared, StaticVec, ThinVec, ERR, PERR,
+    Position, RhaiError, RhaiResult, RhaiResultOf, Scope, Shared, StaticVec, ThinVec, ERR, PERR,
 };
 #[cfg(not(feature = "no_ast"))]
 use crate::{Engine, AST};
@@ -44,7 +48,7 @@ impl fmt::Display for FnPtrType {
             Self::Normal => f.write_str("Fn"),
             #[cfg(not(feature = "no_function"))]
             Self::Script { .. } => f.write_str("Fn*"),
-            Self::Native(..) => f.write_str("Fn"),
+            Self::Native(..) => f.write_str("Fn#"),
         }
     }
 }
@@ -421,16 +425,24 @@ impl FnPtr {
     ///
     /// Do not use the arguments after this call. If they are needed afterwards,
     /// clone them _before_ calling this function.
-    #[inline]
+    #[inline(always)]
     pub fn call_raw(
         &self,
         context: &NativeCallContext,
         this_ptr: Option<&mut Dynamic>,
         arg_values: impl AsMut<[Dynamic]>,
     ) -> RhaiResult {
+        self._call_raw(context, &mut Scope::new(), this_ptr, arg_values)
+    }
+    #[inline]
+    pub(crate) fn _call_raw(
+        &self,
+        context: &NativeCallContext,
+        scope: &mut Scope,
+        mut this_ptr: Option<&mut Dynamic>,
+        mut arg_values: impl AsMut<[Dynamic]>,
+    ) -> RhaiResult {
         let global = context.global_runtime_state();
-        let mut this_ptr = this_ptr;
-        let mut arg_values = arg_values;
         let mut arg_values = arg_values.as_mut();
         let mut args_data: FnArgsVec<_>;
 
@@ -457,13 +469,10 @@ impl FnPtr {
 
                 let args = &mut arg_values.iter_mut().collect::<FnArgsVec<_>>();
 
-                let global = &mut global.clone();
-                global.level += 1;
-
                 return context.engine().call_script_fn(
-                    global,
-                    &mut crate::eval::Caches::new(),
-                    &mut crate::Scope::new(),
+                    global.into(),
+                    &mut Caches::new(),
+                    scope,
                     this_ptr,
                     env.map(|e| &**e),
                     fn_def,
@@ -478,8 +487,6 @@ impl FnPtr {
                 let args = &mut StaticVec::with_capacity(arg_values.len() + 1);
                 args.extend(arg_values.iter_mut());
 
-                let global = &mut global.clone();
-                global.level += 1;
                 let engine = context.engine();
                 let pos = context.call_position();
                 if let Some(this_ptr) = this_ptr {
@@ -493,7 +500,9 @@ impl FnPtr {
                     }
                 }
 
-                let context = (engine, self.fn_name(), None, &*global, pos).into();
+                // Avoid creating a clone of the `GlobalRuntimeState`,
+                // so level is not incremented here.
+                let context = (engine, self.fn_name(), None, global, pos).into();
 
                 return func(context, args)
                     .and_then(|r| engine.check_data_size(r, pos))
@@ -549,7 +558,12 @@ impl FnPtr {
             arg_values.iter_mut().collect::<FnArgsVec<_>>()
         };
 
-        context.call_fn_raw(self.fn_name(), is_method, is_method, args)
+        let name = self.fn_name();
+        let native_only = !is_valid_identifier(name);
+        #[cfg(not(feature = "no_function"))]
+        let native_only = native_only && !crate::func::is_anonymous_fn(name);
+
+        context._call_fn_raw(Some(scope), name, args, native_only, is_method, is_method)
     }
 
     /// _(internals)_ Make a call to a function pointer with either a specified number of arguments,

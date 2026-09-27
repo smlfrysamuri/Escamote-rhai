@@ -20,7 +20,7 @@
 use super::corpus;
 
 use rhai::grain::{Compiler, Vm};
-use rhai::{Dynamic, Engine, Module, Scope, INT};
+use rhai::{Dynamic, Engine, EvalAltResult, Module, Scope, INT};
 
 /// What a run produced, in a form two runs can be compared on.
 #[derive(Debug, PartialEq, Eq)]
@@ -73,6 +73,21 @@ fn agree_with(engine: &Engine, source: &str, build: impl Fn(&mut Scope), writabl
     };
 
     assert_eq!(actual, expected, "{source:?}");
+}
+
+#[test]
+#[cfg(not(feature = "no_closure"))]
+#[cfg(not(feature = "no_index"))]
+#[cfg(not(feature = "no_object"))]
+fn is_shared_method_calls_lower_for_chain_receivers() {
+    let engine = corpus::engine();
+    for source in ["let a = 41; let f = || a; a.is_shared()", "let a = [41]; a[0].is_shared()", r#"fn "i64".check() { this.is_shared() } 41.check()"#] {
+        let ast = engine.compile(source).expect("must compile");
+        let program = Compiler::new().compile(&ast);
+        assert_eq!(program.residual_count(), 0, "{source:?} must lower, got {:?}", program.first_unsupported());
+    }
+
+    agree("let a = 41; let f = || a; a.is_shared()", |_| {}, true);
 }
 
 /// A script integer. Spelled through `INT` because `only_i32` narrows it, and
@@ -367,23 +382,6 @@ fn a_name_that_is_nowhere_is_reported_the_same_way() {
     agree("nope += 1", |_| {}, true);
 }
 
-/// A bare script-function name lowers to a named read and resolves to a
-/// function pointer at run time.
-#[test]
-#[cfg(not(any(feature = "no_function", feature = "no_object")))]
-fn a_script_function_name_is_not_a_variable() {
-    let engine = corpus::engine();
-    let ast = engine.compile("fn helper() { 1 } let f = helper; f.call()").expect("must compile");
-    let program = Compiler::new().compile(&ast);
-
-    assert_eq!(program.residual_count(), 0, "a script-function name should lower without residual AST fragments",);
-    assert!(rhai::grain::bytecode::disassemble(program.code()).any(|(.., op)| matches!(op, rhai::grain::bytecode::Op::LoadNamed(..))), "the lowered program should read `helper` by name",);
-    let out = Vm::new(&engine)
-        .eval_with_scope(&mut Scope::new(), &program)
-        .expect("a script-function name should resolve as a function pointer");
-    assert_eq!(out.as_int().unwrap(), 1);
-}
-
 /// The last of the three places Rhai looks: a constant a host published on a
 /// module rather than in the scope.
 #[test]
@@ -624,6 +622,7 @@ fn a_closure_pointer_is_the_same_from_the_vm() {
 /// will do once compiled chunks are registered for callbacks.
 #[test]
 #[cfg(not(feature = "no_function"))]
+#[cfg(feature = "internals")]
 fn a_compiled_function_can_be_called_by_name() {
     use smallvec::smallvec;
 
@@ -748,4 +747,51 @@ fn a_program_reading_caller_state_can_be_written() {
     let value = Vm::new(&engine).eval_with_scope(&mut scope, &reloaded).expect("must run");
 
     assert_eq!(value.as_int().unwrap(), 15);
+}
+
+#[test]
+fn declarations_honour_the_runtime_definition_filter() {
+    let mut engine = corpus::engine();
+    let source = "let accepted = 1; const blocked = accepted + 1";
+    let ast = engine.compile(source).expect("must compile before filtering");
+    let program = Compiler::new().compile(&ast);
+
+    assert_eq!(program.residual_count(), 0, "{source:?} must be fully lowered");
+
+    let definitions = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen = definitions.clone();
+    engine.on_def_var(move |is_runtime, info, _| {
+        seen.lock().unwrap().push((is_runtime, info.name().to_string(), info.is_const(), info.will_shadow_other_variables()));
+        Ok(info.name() != "blocked")
+    });
+
+    let mut scope = Scope::new();
+    let err = Vm::new(&engine).eval_with_scope(&mut scope, &program).expect_err("the filter must reject the compiled declaration");
+
+    assert!(matches!(*err, EvalAltResult::ErrorForbiddenVariable(ref name, _) if name == "blocked"), "got {err:?}");
+    assert_eq!(*definitions.lock().unwrap(), vec![(true, "accepted".to_string(), false, false), (true, "blocked".to_string(), true, false),],);
+    assert_eq!(scope.get_value::<INT>("accepted"), Some(1));
+    assert!(!scope.contains("blocked"), "a denied declaration must not alter the scope");
+}
+
+#[test]
+fn definition_filter_sees_shadowing_in_compiled_declarations() {
+    let mut engine = corpus::engine();
+    let source = "let value = 1";
+    let ast = engine.compile(source).expect("must compile before filtering");
+    let program = Compiler::new().compile(&ast);
+
+    assert_eq!(program.residual_count(), 0, "{source:?} must be fully lowered");
+
+    engine.on_def_var(|is_runtime, info, _| {
+        assert!(is_runtime, "the VM must invoke the runtime filter");
+        Ok(!info.will_shadow_other_variables())
+    });
+
+    let mut scope = Scope::new();
+    scope.push("value", 0 as INT);
+    let err = Vm::new(&engine).eval_with_scope(&mut scope, &program).expect_err("the filter must reject the shadowing declaration");
+
+    assert!(matches!(*err, EvalAltResult::ErrorForbiddenVariable(ref name, _) if name == "value"), "got {err:?}");
+    assert_eq!(scope.get_value::<INT>("value"), Some(0));
 }

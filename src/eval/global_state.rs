@@ -21,7 +21,6 @@ pub type SharedGlobalConstants =
 //
 // Most usage will be looking up a particular key from the list and then getting the module that
 // corresponds to that key.
-#[derive(Clone)]
 pub struct GlobalRuntimeState {
     /// Names of imported [modules][crate::Module].
     #[cfg(not(feature = "no_module"))]
@@ -38,6 +37,10 @@ pub struct GlobalRuntimeState {
     /// No source if the string is empty.
     pub source: Option<ImmutableString>,
     /// Number of operations performed.
+    #[cfg(target_has_atomic = "64")]
+    pub num_operations: std::sync::atomic::AtomicU64,
+    /// Number of operations performed.
+    #[cfg(not(target_has_atomic = "64"))]
     pub num_operations: u64,
     /// Number of modules loaded.
     #[cfg(not(feature = "no_module"))]
@@ -94,7 +97,7 @@ impl Engine {
             #[cfg(not(feature = "no_function"))]
             lib: crate::StaticVec::new(),
             source: None,
-            num_operations: 0,
+            num_operations: Default::default(),
             #[cfg(not(feature = "no_module"))]
             num_modules_loaded: 0,
             scope_level: 0,
@@ -117,6 +120,43 @@ impl Engine {
                 let dbg = crate::eval::Debugger::new(crate::eval::DebuggerStatus::Init);
                 (x.0)(self, dbg).into()
             }),
+        }
+    }
+}
+
+impl Clone for GlobalRuntimeState {
+    fn clone(&self) -> Self {
+        Self {
+            #[cfg(not(feature = "no_module"))]
+            imports: self.imports.clone(),
+            #[cfg(not(feature = "no_module"))]
+            modules: self.modules.clone(),
+            #[cfg(not(feature = "no_function"))]
+            lib: self.lib.clone(),
+            source: self.source.clone(),
+            #[cfg(target_has_atomic = "64")]
+            num_operations: std::sync::atomic::AtomicU64::new(self.num_operations()),
+            #[cfg(not(target_has_atomic = "64"))]
+            num_operations: self.num_operations,
+            #[cfg(not(feature = "no_module"))]
+            num_modules_loaded: self.num_modules_loaded,
+            scope_level: self.scope_level,
+            level: self.level,
+            always_search_scope: self.always_search_scope,
+            #[cfg(not(feature = "no_module"))]
+            embedded_module_resolver: self.embedded_module_resolver.clone(),
+            #[cfg(not(feature = "no_module"))]
+            #[cfg(not(feature = "no_function"))]
+            constants: self.constants.clone(),
+
+            #[cfg(feature = "grain")]
+            grain_faults: self.grain_faults.clone(),
+
+            tag: self.tag.clone(),
+
+            #[cfg(feature = "debugging")]
+            #[cfg(not(feature = "no_ast"))]
+            debugger: self.debugger.clone(),
         }
     }
 }
@@ -290,6 +330,19 @@ impl GlobalRuntimeState {
         self.source.as_ref()
     }
 
+    /// Number of operations performed.
+    #[inline(always)]
+    #[must_use]
+    pub fn num_operations(&self) -> u64 {
+        #[cfg(target_has_atomic = "64")]
+        return self
+            .num_operations
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        #[cfg(not(target_has_atomic = "64"))]
+        return self.num_operations;
+    }
+
     /// Return a reference to the debugging interface.
     ///
     /// # Panics
@@ -355,5 +408,97 @@ impl fmt::Debug for GlobalRuntimeState {
         f.field("debugger", &self.debugger);
 
         f.finish()
+    }
+}
+
+/// _(internals)_ An enum holding either a mutable or immutable reference to a
+/// [`GlobalRuntimeState`].
+/// Exported under the `internals` feature only.
+pub enum GlobalRef<'a> {
+    /// An immutable reference to a [`GlobalRuntimeState`].
+    Ref(&'a GlobalRuntimeState, Option<Box<GlobalRuntimeState>>),
+    /// A mutable reference to a [`GlobalRuntimeState`].
+    Mut(&'a mut GlobalRuntimeState),
+}
+
+impl<'a> Into<GlobalRef<'a>> for &'a mut GlobalRuntimeState {
+    #[inline(always)]
+    fn into(self) -> GlobalRef<'a> {
+        GlobalRef::Mut(self)
+    }
+}
+
+impl<'a> Into<GlobalRef<'a>> for &'a GlobalRuntimeState {
+    #[inline(always)]
+    fn into(self) -> GlobalRef<'a> {
+        GlobalRef::Ref(self, None)
+    }
+}
+
+impl<'a> AsRef<GlobalRuntimeState> for GlobalRef<'a> {
+    #[inline(always)]
+    fn as_ref(&self) -> &GlobalRuntimeState {
+        match self {
+            GlobalRef::Ref(g, ..) => g,
+            GlobalRef::Mut(g) => g,
+        }
+    }
+}
+
+impl<'a> AsMut<GlobalRuntimeState> for GlobalRef<'a> {
+    #[inline(always)]
+    fn as_mut(&mut self) -> &mut GlobalRuntimeState {
+        match self {
+            GlobalRef::Ref(_, Some(g)) => g,
+            GlobalRef::Ref(g, global_clone @ None) => {
+                *global_clone = Some(g.clone().into());
+                global_clone.as_mut().unwrap()
+            }
+            GlobalRef::Mut(g) => g,
+        }
+    }
+}
+
+impl<'a> GlobalRef<'a> {
+    /// Get a mutable reference to the underlying [`GlobalRuntimeState`], cloning it into an
+    /// owned instance if necessary.
+    ///
+    /// If a cloning takes place, the `level` is incremented.
+    pub fn as_mut_level_up(&mut self) -> &mut GlobalRuntimeState {
+        match self {
+            GlobalRef::Ref(_, Some(g)) => g,
+            GlobalRef::Ref(g, g2 @ None) => {
+                let mut global_clone = g.clone();
+                global_clone.level += 1;
+                *g2 = Some(global_clone.into());
+                g2.as_mut().unwrap()
+            }
+            GlobalRef::Mut(g) => g,
+        }
+    }
+    /// Take ownership of the owned [`GlobalRuntimeState`] instance, making a clone if necessary.
+    ///
+    /// If a cloning takes place, the `level` is incremented.
+    pub fn take_with_level_up(&mut self) -> GlobalRuntimeState {
+        match self {
+            GlobalRef::Ref(_, g @ Some(_)) => *g.take().unwrap(),
+            GlobalRef::Ref(_, None) => {
+                let _ = self.as_mut_level_up();
+                self.take_with_level_up()
+            }
+            GlobalRef::Mut(g) => g.clone(),
+        }
+    }
+
+    /// Put back the owned [`GlobalRuntimeState`] instance, replacing it if necessary.
+    ///
+    /// Returning the previous owned instance, if there was one.
+    ///
+    /// If [`Mut`][GlobalRef::Mut], the provided instance is returned.
+    pub fn put_back(&mut self, global: GlobalRuntimeState) -> Option<GlobalRuntimeState> {
+        match self {
+            GlobalRef::Ref(_, g) => std::mem::replace(g, Some(global.into())).map(|g| *g),
+            GlobalRef::Mut(_) => Some(global),
+        }
     }
 }

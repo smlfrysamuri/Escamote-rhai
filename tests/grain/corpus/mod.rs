@@ -147,8 +147,9 @@ const fn case(name: &'static str, source: &'static str) -> Case {
 ///
 /// Lives here rather than in one harness because every harness that walks
 /// [`CASES`] needs the same answer.
+#[rhai::expose_under_internals]
 #[must_use]
-pub fn applies_to_this_build(name: &str) -> bool {
+fn applies_to_this_build(name: &str) -> bool {
     #[cfg(feature = "no_closure")]
     if name.starts_with("closure_") || name.starts_with("is_shared") {
         return false;
@@ -195,6 +196,7 @@ pub fn applies_to_this_build(name: &str) -> bool {
                 | "for_over_captured_array"
                 | "for_return_from_body"
                 | "fn_call_captures_parent_scope"
+                | "fnptr_call_captures_parent_scope"
                 | "is_def_fn"
                 | "map_computed_order"
                 | "map_read_of_absent_key_is_not_visible_to_a_closure"
@@ -485,6 +487,7 @@ pub const CASES: &[Case] = &[
     // matters more than being clever about it.
     case("switch_range_subject_never_matches", "let r = 0..5; switch r { 0..5 => \"same\", _ => \"no\" }"),
     case("switch_break_from_loop", "let s = 0; let i = 0; while i < 10 { switch i { 3 => break, _ => () } s += 1; i += 1; } s"),
+    case("switch_with_guards", "let x = 42; switch 2 { 1 => (), 2 if x < 40 => 'a', 42 => true, _ => 123 }"),
     // --- blocks used for their value ---------------------------------------
     // Rhai wraps a block in `Expr::Stmt` wherever a value is wanted, so these
     // are one construct in three disguises. Each declares inside the block, so
@@ -505,6 +508,7 @@ pub const CASES: &[Case] = &[
     // --- functions --------------------------------------------------------
     case("fn_call", "fn add(a, b) { a + b } add(2, 3)"),
     case("fn_call_captures_parent_scope", r#"fn foo(x) { x + y * z }  let x = 42; let y = 1; let z = 9; foo!(x)"#),
+    case("fnptr_call_captures_parent_scope", r#"fn foo(x) { let h = b + 42 + x; } let b = 999; let h = 123; let f = Fn("foo"); call!(f, 1); h"#),
     case("is_def_fn", r#"fn add(x, y) { x + y } is_def_fn("add", 2)"#),
     // Kept shallow deliberately: Rhai's default call-depth limit is far lower
     // in debug builds than in release, and this case is about recursion working
